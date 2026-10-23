@@ -1,0 +1,15 @@
+# Ambientes virtuais e arquivos de SO
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# VirtualBox e VMs
+*.vdi
+*.vmdk
+*.vbox
+*.vbox-prev
+*.nvram
+
+# Logs e temporários
+*.log
+*.tmp
