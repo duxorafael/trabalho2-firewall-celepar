@@ -1,67 +1,57 @@
-# 🛡️ Matriz de Regras de Firewall e Políticas de Segurança
+# Matriz de Regras de Firewall e Politicas de Seguranca (v2.1)
 
-Este documento detalha o comportamento lógico, portas e justificativas de segurança para cada regra definida na **Tabela 3** do relatório v2.0 da Celepar.
-
----
-
-## 1. Princípios de Segurança Adotados
-
-1. **Princípio do Menor Privilégio (*Least Privilege*):** Nenhum segmento de rede possui permissão padrão de acesso a outro segmento. Todo o tráfego não explicitamente permitido é descartado (*Default Drop / Deny All*).
-2. **Inspeção de Estado (*Stateful Packet Inspection - SPI*):** O firewall mantém uma tabela de estados (`conntrack` / *state table*). Pacotes que pertencem a conexões iniciadas legitimamente de dentro da rede recebem permissão automática de retorno (`ESTABLISHED, RELATED`), sem a necessidade de abrir portas de entrada indiscriminadas na WAN.
-3. **Isolamento de Zonas por Risco:**
-   - **Zona Crítica (VLAN 10):** Acesso restrito a administradores credenciados.
-   - **Zona Corporativa Segura (VLAN 20):** Apenas portas autorizadas de serviço são expostas.
-   - **Zona de Operação (VLAN 30):** Estações cabeadas dos funcionários.
-   - **Zona Desconfiável / Untrusted (VLAN 40):** Apenas saída para navegação externa.
+Este documento detalha o comportamento logico, portas e justificativas de seguranca para as regras do firewall, incorporando os servicos corporativos solicitados pelo professor (DHCP, DNS, Servidor Web / Intranet com Requisicoes e VPN), mantendo foco na arquitetura de seguranca e menor privilegio.
 
 ---
 
-## 2. Detalhamento Técnico das Regras
+## 1. Principios de Seguranca Adotados
 
-### Regra 1: Navegação de Visitantes (VLAN 40 ➔ WAN)
-- **Origem:** `10.0.40.0/24`
-- **Destino:** `0.0.0.0/0` (WAN / Internet)
-- **Protocolos / Portas:**
-  - `TCP 80` (HTTP)
-  - `TCP 443` (HTTPS)
-  - `UDP/TCP 53` (DNS)
-- **Ação:** `PASS / PERMIT`
-- **Justificativa:** Visitantes e dispositivos pessoais de funcionários (BYOD) necessitam apenas de acesso à internet e resolução de nomes externa. Qualquer tentativa de usar portas de SSH, Telnet, P2P, SMTP ou protocolos desconhecidos é bloqueada na origem.
-
----
-
-### Regra 2: Isolamento da Rede de Visitantes (VLAN 40 ➔ VLANs 10, 20, 30)
-- **Origem:** `10.0.40.0/24`
-- **Destino:** `10.0.0.0/8` (RFC 1918 - Rede Corporativa Celepar)
-- **Protocolos / Portas:** `ANY`
-- **Ação:** `BLOCK / DROP`
-- **Justificativa:** Evita varreduras de porta (*port scans*), tentativas de exploração lateral (*lateral movement*), infecções por malware ou acesso indevido aos servidores corporativos a partir de celulares ou notebooks não homologados que se conectam ao Wi-Fi visitante.
+1. Principio do Menor Privilegio (Least Privilege): Nenhum segmento de rede possui permissao padrao de acesso a outro segmento. Todo o trafego nao explicitamente permitido e descartado (Default Drop / Deny All).
+2. Inspecao de Estado (Stateful Packet Inspection - SPI): O firewall mantem uma tabela de estados (conntrack / state table). Pacotes que pertencem a conexoes iniciadas legitimamente de dentro da rede recebem permissao automatica de retorno (ESTABLISHED, RELATED), sem a necessidade de abrir portas de entrada indiscriminadas na WAN.
+3. Isolamento de Zonas por Risco:
+   - Zona Critica (VLAN 10 - Gerenciamento): Acesso restrito a administradores credenciados (ou via VPN administrativa autenticada).
+   - Zona Corporativa Segura (VLAN 20 - Servidores): Concentra o servidor de arquivos (files.local / 10.0.20.5), o servidor web da Intranet/Requisicoes (intranet.celepar.local / 10.0.20.10) e impressoras corporativas.
+   - Zona de Operacao (VLAN 30 - Estacoes de Trabalho): 96 postos cabeados dos colaboradores Celepar.
+   - Zona Nao Confiavel / Untrusted (VLAN 40 - Wi-Fi Visitantes): Apenas saida restrita para navegacao externa (isolamento total contra qualquer ativo interno).
+   - Zona de Acesso Remoto (VPN - 10.0.50.0/24): Tunel criptografado para colaboradores remotos e administracao externa de T.I.
 
 ---
 
-### Regra 3: Proteção de Borda (WAN ➔ Rede Interna)
-- **Origem:** WAN (`Qualquer IP público`)
-- **Destino:** Sub-redes internas (`10.0.0.0/8`)
-- **Protocolos / Portas:** `ANY`
-- **Ação:** `BLOCK / DROP` (Tráfego de entrada não solicitado)
-- **Justificativa:** Regra básica de borda corporativa com NAT. Nenhuma porta de entrada deve ficar aberta para o mundo exterior sem um IP público dedicado ou DNAT/Port Forwarding explícito (e mesmo para acesso remoto, a recomendação adotada no relatório foi VPN autenticada).
+## 2. Mapa dos Servicos Corporativos
+
+| Servico | Host / IP | Porta(s) | Descricao e Seguranca |
+|---|---|---|---|
+| DHCP Central | Gateway Central (10.0.x.1) | UDP 67 / 68 | Escopos dinamicos para VLAN 30 e 40 com exclusao de IPs estaticos. |
+| DNS Resolver | 10.0.10.1 (Gateway) | UDP/TCP 53 | Resolucao interna autoritativa (celepar.local) e recursao externa com cache. |
+| Servidor de Arquivos (SMB) | 10.0.20.5 (files.local) | TCP 445 | Compartilhamento seguro de diretorios corporativos Celepar. |
+| Servidor Web / Intranet | 10.0.20.10 (intranet.celepar.local) | TCP 80 / 443 | Portal de chamados e requisicao de servicos de T.I. dos colaboradores. |
+| Servidor de Impressao | 10.0.20.0/24 | TCP 631 | Protocolo IPP para envio de documentos as impressoras do andar. |
+| Gateway VPN (OpenVPN/IPsec) | WAN (203.0.113.2) | UDP 1194 | Tunel criptografado de acesso remoto alocando IPs na faixa 10.0.50.0/24. |
 
 ---
 
-### Regra 4: Acesso das Estações aos Servidores (VLAN 30 ➔ VLAN 20)
-- **Origem:** `10.0.30.0/24`
-- **Destino:** `10.0.20.0/24` (especificamente `10.0.20.5 - files.local`)
-- **Protocolos / Portas:**
-  - `TCP 445` (Microsoft-DS / SMB para compartilhamento de arquivos)
-  - `TCP 631` (IPP - Internet Printing Protocol para impressoras de rede)
-- **Ação:** `PASS / PERMIT` (com regra de `DROP` para todo o resto subsequente)
-- **Justificativa:** Os 96 computadores dos funcionários necessitam acessar a pasta de rede da Celepar e mandar impressões para os equipamentos departamentais. Outras portas (como SSH 22, RDP 3389, SQL 3306/5432, HTTP/HTTPS no servidor) ficam fechadas para os usuários comuns, evitando acessos administrativos ou vetores de exploração.
+## 3. Matriz Completa de Regras de Firewall
+
+| Regra | Origem | Destino | Porta / Servico | Acao | Objetivo / Justificativa |
+|:---:|---|---|---|:---:|---|
+| 1 | VLAN 40 (Visitantes) | WAN (Internet) | HTTP (80), HTTPS (443), DNS (53) | Permitir | Acesso controlado a navegacao web para visitantes. |
+| 2 | VLAN 40 (Visitantes) | Redes Internas (10.0.0.0/8) | Qualquer | Bloquear | Isolamento total: visitantes nao acessam a Intranet, SMB nem gerencia. |
+| 3 | WAN (Internet) | Gateway WAN | UDP 1194 (OpenVPN) | Permitir | Ponto de entrada exclusivo para tunel VPN autenticado com certificado. |
+| 4 | WAN (Internet) | Redes Internas | Qualquer | Bloquear | Bloqueio padrao de conexoes nao solicitadas (stateful inspection). |
+| 5 | VLAN 30 (Estacoes) | VLAN 20 (Servidores) | SMB (445), IPP (631), HTTP (80), HTTPS (443) | Permitir | Acesso aos arquivos, impressoras e Portal Intranet / Sistema de Requisicoes. |
+| 6 | VLAN 30 (Estacoes) | VLAN 20 (Servidores) | Qualquer outra porta | Bloquear | Bloqueia SSH (22), RDP (3389) e banco de dados contra acessos nao autorizados. |
+| 7 | VPN (10.0.50.0/24) | VLAN 20 (Servidores) | SMB (445), HTTP (80), HTTPS (443) | Permitir | Colaborador remoto acessa arquivos e portal de requisicoes com seguranca. |
+| 8 | VPN (10.0.50.0/24) | VLAN 10 (Gerencia) | SSH (22), HTTPS (443) | Permitir (Admin) | Administrador de T.I. gerencia switches e roteadores remotamente via VPN. |
+| 9 | VLANs 20, 30, 40 | VLAN 10 (Gerencia) | Qualquer | Bloquear | Protecao estrita das interfaces administrativas locais contra usuarios comuns. |
+| 10 | VLAN 30, 40 | Gateway Local | UDP 67/68 (DHCP), UDP 53 (DNS) | Permitir | Permite obtencao de IP automatico e resolucao de nomes internos/externos. |
+| Default | Qualquer | Qualquer | Qualquer | Bloquear | Default Drop: todo trafego nao explicitado acima e descartado. |
 
 ---
 
-### Regra 5: Proteção da Gerência (VLANs 20, 30, 40 ➔ VLAN 10)
-- **Origem:** `10.0.20.0/24`, `10.0.30.0/24`, `10.0.40.0/24`
-- **Destino:** `10.0.10.0/24`
-- **Protocolos / Portas:** `ANY`
-- **Ação:** `BLOCK / DROP`
-- **Justificativa:** Os painéis de administração web (HTTPS/SSH) dos 4 switches TP-Link SG3428XMP, dos 6 Access Points EAP650, da PDU do rack e da interface do próprio roteador residem na VLAN 10. Bloquear o acesso das demais VLANs garante que um computador comprometido na estação de trabalho não consiga atacar o plano de controle (*control plane*) da infraestrutura. O acesso à VLAN 10 só é possível conectando fisicamente na porta reservada do rack ou via estação exclusiva do time de T.I.
+## 4. Analise Tecnica de Seguranca dos Servicos
+
+### Posicionamento da Intranet e Sistema de Requisicoes na VLAN 20
+A alocacao do servidor web na VLAN 20 (Zona de Servidores) resguarda a aplicacao tanto do acesso publico irrestrito da WAN quanto da rede de visitantes (VLAN 40). O trafego das estacoes de trabalho (VLAN 30) para a aplicacao e restrito estritamente as portas 80 e 443. Caso a aplicacao sofra qualquer incidente, o isolamento em Camada 3 impede a propagacao lateral para as estacoes dos colaboradores ou para os ativos de gerencia.
+
+### Seguranca da VPN na Porta UDP 1194 e Sub-rede 10.0.50.0/24
+O servico de VPN estabelece um canal criptografado via TLS/SSL. Ao delimitar uma sub-rede exclusiva (10.0.50.0/24), o firewall mantem a capacidade de aplicar politicas granulares aos clientes externos (Regras 7 e 8) sem misturar permissoes com as maquinas fisicas da empresa, viabilizando controle de acesso e auditoria.

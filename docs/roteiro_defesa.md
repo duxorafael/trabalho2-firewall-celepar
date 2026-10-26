@@ -1,52 +1,57 @@
-# 🎓 Roteiro e Guia de Defesa Oral (Professor Gabriel Candido)
+# Roteiro e Guia de Defesa Oral (Professor Gabriel Candido) - v2.1
 
-Este material foi preparado para orientar a equipe (**Alexandre, Beatriz e Maurício**) durante a **defesa presencial/oral** do Trabalho 2. Não há slides — a avaliação é uma conversa técnica onde o professor avalia o domínio dos conceitos, a lógica das decisões e a execução prática.
-
----
-
-## 🧭 Visão Estratégica da Apresentação da Defesa (3 a 5 minutos)
-
-### 1. Introdução rápida (O que foi feito)
-> *"Professor, pegamos a arquitetura proposta no Trabalho 1 para o escritório da Celepar e implementamos a camada mais crítica de segurança: o **Firewall e o Roteamento Inter-VLAN**.*  
-> *Traduzimos a **Tabela 3** do relatório em regras reais de filtragem por pacotes (Camada 4) e estado de conexão, garantindo o princípio do menor privilégio entre os 96 postos, o servidor de arquivos corporativo, a gerência e os visitantes."*
-
-### 2. Demonstração Prática (Ao vivo)
-Tenha a topologia aberta (seja no pfSense/VirtualBox ou no Packet Tracer).
-1. **Mostrar as Interfaces/VLANs:** Mostrar os 4 gateways configurados (`10.0.10.1`, `20.1`, `30.1`, `40.1`).
-2. **Mostrar as Regras Ordenadas:** Explicar que o firewall avalia as regras de cima para baixo (*first match wins*).
-3. **Executar a bateria de testes:**
-   - Abrir o terminal da **VLAN 30 (Estação)** e testar porta 445 no Servidor (`10.0.20.5`) ➔ **Passa**.
-   - No mesmo terminal, tentar pingar ou abrir SSH na porta 22 do Servidor ➔ **Bloqueado**.
-   - No terminal da **VLAN 40 (Visitante)**, tentar pingar qualquer IP interno `10.0.x.x` ➔ **Bloqueado**.
-   - No terminal da **VLAN 40**, tentar navegar para um IP/site externo (porta 80/443) ➔ **Passa**.
-   - Tentar acessar a interface do gateway `10.0.10.1` a partir da estação ➔ **Bloqueado**.
+Este material orienta a equipe (Alexandre, Beatriz e Mauricio) durante a defesa presencial/oral. O foco e demonstrar como os servicos solicitados pelo professor (DHCP, DNS, Intranet com Requisicoes e VPN) foram incorporados com rigor tecnico, preservando a seguranca e o isolamento por firewall.
 
 ---
 
-## ❓ Perguntas Típicas do Professor e Como Responder
+## 1. Visao Geral da Apresentacao da Defesa (3 a 5 minutos)
 
-### Pergunta 1: *"Por que vocês bloquearam a VLAN 10 para todo mundo? Como o administrador acessa os equipamentos?"*
-* **Resposta Ideal:**  
-  > *"A VLAN 10 é a rede de Gerenciamento Out-of-Band da Celepar. Nela estão os painéis web dos switches, APs e do roteador. Se qualquer estação de trabalho tivesse acesso, uma máquina infectada com malware ou um funcionário mal-intencionado poderia tentar brute-force no switch. O administrador de redes acessa a VLAN 10 conectando um notebook físico diretamente na porta dedicada do rack da Sala de T.I. ou através de uma estação autorizada com IP fixo ou VPN administrativa."*
-
-### Pergunta 2: *"Na Regra 3, vocês bloqueiam todo o tráfego da WAN para a rede interna. Se a WAN é bloqueada, como os computadores conseguem navegar e receber as páginas web de volta?"*
-* **Resposta Ideal:**  
-  > *"Porque o firewall opera como **Stateful Packet Inspection (SPI)**. Quando um cliente interno da VLAN 30 inicia uma conexão saindo pela porta 443 para a WAN, o firewall registra essa sessão na tabela de estados (conntrack). Quando o servidor web externo responde, o firewall reconhece que aquele pacote pertence a um estado `ESTABLISHED/RELATED` e permite a entrada. A Regra 3 bloqueia apenas conexões **iniciadas externamente** que não foram solicitadas por ninguém de dentro."*
-
-### Pergunta 3: *"Por que colocar portas específicas (445 e 631) entre a VLAN 30 e a VLAN 20 em vez de liberar todo o tráfego TCP?"*
-* **Resposta Ideal:**  
-  > *"Pelo **princípio do menor privilégio**. As estações de trabalho dos 96 colaboradores da Celepar só precisam abrir arquivos na rede (porta SMB 445) e enviar impressões (porta IPP 631). Se liberássemos todo o tráfego TCP, qualquer vulnerabilidade em outros serviços do servidor (como SSH, banco de dados ou painel de gerenciamento) ficaria exposta a varreduras vindas da rede de estações."*
-
-### Pergunta 4: *"Qual a diferença entre uma regra no switch (ACL L2/L3) e no firewall/roteador central?"*
-* **Resposta Ideal:**  
-  > *"O switch camada 2 apenas faz o isolamento de broadcast separando as tags 802.1Q. Quando o pacote precisa passar de uma VLAN para outra (inter-VLAN routing), ele obrigatoriamente sobe pelo enlace trunk para o gateway/firewall. É no gateway que ocorre a inspeção de camada 3 (endereço IP) e camada 4 (portas TCP/UDP), aplicando as regras da nossa matriz antes de encaminhar o pacote de volta para o switch."*
-
-### Pergunta 5: *"O que acontece se uma regra de 'Bloquear Tudo' ficar no topo da lista de regras?"*
-* **Resposta Ideal:**  
-  > *"O firewall realiza o casamento de regras sequencialmente (*top-down*). Se uma regra abrangente de 'Drop Any' estiver no topo, ela será acionada imediatamente e descartará o pacote antes que o firewall consiga ler as regras de permissão abaixo dela. Por isso, as regras mais específicas (permissões por porta) ficam acima, e o bloqueio geral (*Default Drop*) fica no final."*
+### Introducao
+"Professor, a partir da arquitetura do relatorio da Celepar, implementamos a camada central de seguranca e servicos essenciais:
+1. Firewall Stateful e Roteamento Inter-VLAN com controle rigoroso em Camada 4.
+2. Servicos de Infraestrutura Basica: DHCP dinamico e DNS interno com resolucao do dominio celepar.local.
+3. Zona de Servidores (VLAN 20): Hospeda o compartilhamento de arquivos (files.local), impressoras e o Servidor Web da Intranet com formulario funcional para requisicoes e chamados de T.I.
+4. Acesso Remoto Seguro (VPN): Tunel criptografado para colaboradores remotos e administracao externa, sem expor portas desnecessarias na WAN."
 
 ---
 
-## 💡 Dicas de Postura para a Defesa
-- **Segurança ao falar:** Usem os termos técnicos corretos: *trunk 802.1Q*, *router-on-a-stick*, *stateful inspection*, *default drop*, *least privilege*.
-- **Divisão entre os três:** Qualquer um dos três deve saber explicar tanto a topologia quanto o teste. Se o professor apontar para a Beatriz ou para o Maurício perguntando sobre a porta 445 ou o isolamento da VLAN 40, a resposta deve estar na ponta da língua com base neste roteiro.
+## 2. Roteiro de Demonstracao Pratica
+
+1. Apresentacao da Topologia e Gateways:  
+   Demonstrar as 4 subinterfaces das VLANs e a sub-rede da VPN (10.0.50.0/24).
+2. Demonstracao da Intranet na VLAN 20:  
+   - Acessar o navegador na VLAN 30 (Estacao) no endereco http://intranet.celepar.local (ou http://10.0.20.10). A aplicacao carrega normalmente.
+   - Acessar o mesmo endereco a partir do computador da VLAN 40 (Visitante). O firewall descarta os pacotes e a conexao e rejeitada.
+3. Demonstracao do Servidor de Arquivos:  
+   - Na VLAN 30, testar a porta 445 (SMB) -> Conexao estabelecida.
+   - No mesmo terminal, tentar porta 22 (SSH) no servidor -> Conexao bloqueada.
+4. Demonstracao da Protecao da Gerencia (VLAN 10):  
+   - Enviar requisicao ICMP para 10.0.10.1 a partir da estacao ou do visitante -> Pacotes descartados pelo firewall.
+5. Demonstracao da Resolucao DNS e DHCP:  
+   - Exibir a estacao recebendo configuracao IP dinamica (10.0.30.x) e resolvendo intranet.celepar.local para 10.0.20.10.
+
+---
+
+## 3. Questoes Provaveis da Arguicao Tecnica
+
+### Pergunta 1: "Por que alocar o Servidor Web da Intranet na VLAN 20 em vez de uma DMZ publica?"
+Resposta:  
+"Uma DMZ publica e destinada a servicos que precisam ser alcancados diretamente por qualquer usuario da internet. No nosso cenario, a Intranet e corporativa e restrita a colaboradores e operacao interna. Aloca-la na VLAN 20 assegura que o acesso fique restrito as estacoes corporativas autenticadas e usuarios de VPN, mantendo a aplicacao totalmente invisivel e protegida contra a rede de visitantes e a internet externa."
+
+### Pergunta 2: "Como o DNS opera para os visitantes e para os funcionarios?"
+Resposta:  
+"Adotamos uma abordagem de resolucao condicional:
+- Os colaboradores da VLAN 30 utilizam o DNS interno, que resolve os nomes corporativos (intranet.celepar.local e files.local) e encaminha consultas externas recursivamente para a internet.
+- Os visitantes da VLAN 40 recebem via DHCP servidores DNS publicos ou uma configuracao restrita que nao resolve a zona interna, impedindo o reconhecimento e mapeamento da estrutura corporativa."
+
+### Pergunta 3: "Se a WAN bloqueia conexoes de entrada por padrao, como a VPN consegue se conectar de fora?"
+Resposta:  
+"O firewall possui uma regra de excecao explicita na interface WAN restrita unicamente a porta UDP 1194, destinada ao servico OpenVPN do gateway. Qualquer outra tentativa de entrada e descartada pela regra padrao de bloqueio. O tunel so e liberado apos autenticacao com chave e certificado digital TLS. Uma vez conectado, o cliente recebe um IP da faixa 10.0.50.0/24, sujeitando-se as politicas internas do firewall."
+
+### Pergunta 4: "O que impede um usuario da VLAN 40 de configurar um IP estatico da VLAN 30 para tentar burlar o firewall?"
+Resposta:  
+"A seguranca esta ancorada na associacao fisica de portas e nas tags 802.1Q dos switches. Quando um usuario se conecta em uma porta de acesso da VLAN 40, todo o trafego emitido por ele recebe a tag 40 na camada de enlace. Mesmo alterando o endereco IP localmente, os pacotes alcancam a subinterface VLAN 40 do roteador/firewall, sendo filtrados pelas regras da VLAN 40 e bloqueados por politicas de anti-spoofing."
+
+### Pergunta 5: "Qual a finalidade do sistema de requisicao integrado a Intranet?"
+Resposta:  
+"Ele atua como a interface de aplicacao para os colaboradores da Celepar solicitarem suporte tecnico, permissoes a pastas de rede e liberacao de acessos. Demonstra na pratica como servicos de aplicacao operam suportados e protegidos pela infraestrutura de rede e pelas politicas de firewall implementadas."
