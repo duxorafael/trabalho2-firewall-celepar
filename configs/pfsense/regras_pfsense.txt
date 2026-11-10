@@ -1,127 +1,31 @@
-===============================================================================
-MAPEAMENTO DE REGRAS NO PFSENSE GUI (Firewall > Rules)
-===============================================================================
-Nota: No pfSense, as regras de firewall são aplicadas por interface (na aba
-correspondente à VLAN de origem do tráfego). A leitura é Top-to-Bottom.
+REGISTRO DE ACESSOS TESTADOS — PF SENSE / CELEPAR 10/11/2026
+===========================================================
+IMPORTANTE: resumo de regras observadas; NÃO É export do arquivo config.xml.
+Interface SERVIDORES em2: gateway 10.0.20.1/24
+Interface ESTACOES em3: gateway 10.0.30.1/24
+Interface VISITANTES em4: gateway 10.0.40.1/24
+Interface LAN/GERENCIA em1: gateway 10.0.10.1/24
+WAN em0: VirtualBox NAT; VPN: 10.0.50.0/24
 
--------------------------------------------------------------------------------
-1. ABA: VLAN40 (Visitantes)
--------------------------------------------------------------------------------
-[Regra 1.1 - DNS para o próprio Gateway ou Externo]
-  - Action: Pass
-  - Interface: VLAN40
-  - Address Family: IPv4
-  - Protocol: TCP/UDP
-  - Source: VLAN40 net
-  - Destination: any
-  - Destination Port: 53 (DNS)
-  - Description: [Regra 1] Permitir resolucao DNS para visitantes
+ESTACOES (origem 10.0.30.0/24)
+PASS  DNS para 10.0.30.1 porta 53
+PASS  TCP de 10.0.30.50 para 10.0.20.10 porta 80 [HTTP 200]
+PASS  TCP de 10.0.30.50 para 10.0.20.5 porta 445 [nc conectado]
+BLOCK TCP de 10.0.30.50 para 10.0.20.5 porta 22 [log pfSense]
+BLOCK TCP de 10.0.30.50 para 10.0.10.1 porta 80 [log pfSense]
 
-[Regra 1.2 - Navegacao Web Externa]
-  - Action: Pass
-  - Interface: VLAN40
-  - Address Family: IPv4
-  - Protocol: TCP
-  - Source: VLAN40 net
-  - Destination: any
-  - Destination Port: Alias PORTAS_WEB_VISITANTE (80, 443)
-  - Description: [Regra 1] Permitir HTTP e HTTPS para a Internet
+VISITANTES (origem 10.0.40.0/24)
+BLOCK TCP de 10.0.40.50 para 10.0.20.10 porta 80 [log pfSense]
+BLOCK TCP de 10.0.40.50 para 10.0.20.5 porta 445 [log pfSense]
+PASS  HTTPS externo TCP 443 [curl example.com HTTP/2 200]
 
-[Regra 1.3 - Isolamento Total das Redes Internas]
-  - Action: Block
-  - Interface: VLAN40
-  - Address Family: IPv4
-  - Protocol: any
-  - Source: VLAN40 net
-  - Destination: Alias REDES_INTERNAS (10.0.0.0/8)
-  - Description: [Regra 2] Bloqueio total de visitantes para ativos Celepar
+SERVIDORES (origem 10.0.20.0/24)
+NTP para pfSense 10.0.20.1 [Chrony sincronizado]
+SNMP consulta pfSense 10.0.20.1 UDP 161 [Zabbix verde]
+Zabbix coleta Agent 2 estação 10.0.30.50 TCP 10050 [Zabbix verde]
+Acesso externo ICMP servidor -> 8.8.8.8 [ping sucesso]
 
-[Regra 1.4 - Default Drop]
-  - Implicito pelo pfSense (qualquer outro trafego alem de 80, 443 e 53 sera bloqueado).
+VPN / WINDOWS
+Cliente 10.0.50.2 via 10.0.50.1 para servidor 10.0.20.5:22 [SSH autenticado]
 
-
--------------------------------------------------------------------------------
-2. ABA: VLAN30 (Estações de Trabalho)
--------------------------------------------------------------------------------
-[Regra 2.1 - Bloqueio de Acesso a Gerencia]
-  - Action: Block
-  - Interface: VLAN30
-  - Address Family: IPv4
-  - Protocol: any
-  - Source: VLAN30 net
-  - Destination: VLAN10 net (10.0.10.0/24)
-  - Description: [Regra 5] Bloqueio de acesso a rede de gerencia
-
-[Regra 2.2 - Permitir Acesso aos Servidores (Arquivos e Impressao)]
-  - Action: Pass
-  - Interface: VLAN30
-  - Address Family: IPv4
-  - Protocol: TCP
-  - Source: VLAN30 net
-  - Destination: 10.0.20.5 (ou VLAN20 net)
-  - Destination Port: Alias PORTAS_SERVICOS_CORP (445, 631)
-  - Description: [Regra 4] Permitir SMB e IPP para servidores
-
-[Regra 2.3 - Bloquear Restante para VLAN20]
-  - Action: Block
-  - Interface: VLAN30
-  - Address Family: IPv4
-  - Protocol: any
-  - Source: VLAN30 net
-  - Destination: VLAN20 net (10.0.20.0/24)
-  - Description: [Regra 4] Bloquear qualquer outro acesso aos servidores
-
-[Regra 2.4 - Saida para Internet]
-  - Action: Pass
-  - Interface: VLAN30
-  - Address Family: IPv4
-  - Protocol: any
-  - Source: VLAN30 net
-  - Destination: any
-  - Description: Permitir navegacao e servicos corporativos externos
-
-
--------------------------------------------------------------------------------
-3. ABA: VLAN20 (Servidores / Corporativo)
--------------------------------------------------------------------------------
-[Regra 3.1 - Bloqueio de Acesso a Gerencia]
-  - Action: Block
-  - Interface: VLAN20
-  - Address Family: IPv4
-  - Protocol: any
-  - Source: VLAN20 net
-  - Destination: VLAN10 net (10.0.10.0/24)
-  - Description: [Regra 5] Bloqueio de servidores para a gerencia
-
-[Regra 3.2 - Saida para Internet (Updates e Sync)]
-  - Action: Pass
-  - Interface: VLAN20
-  - Address Family: IPv4
-  - Protocol: TCP
-  - Source: VLAN20 net
-  - Destination: any
-  - Destination Port: HTTP (80) e HTTPS (443)
-  - Description: Permitir atualizacoes dos servidores na internet
-
-
--------------------------------------------------------------------------------
-4. ABA: VLAN10 (Gerenciamento)
--------------------------------------------------------------------------------
-[Regra 4.1 - Acesso Administrativo Total]
-  - Action: Pass
-  - Interface: VLAN10
-  - Address Family: IPv4
-  - Protocol: any
-  - Source: VLAN10 net
-  - Destination: any
-  - Description: Acesso irrestrito para administradores credenciados de TI
-
-
--------------------------------------------------------------------------------
-5. ABA: WAN (Internet)
--------------------------------------------------------------------------------
-- O pfSense bloqueia nativamente qualquer tentativa de conexao originada na WAN
-  atraves do Default Deny Rule e protecao de IPs Bogon e RFC 1918.
-- Conexoes iniciadas de dentro da rede para fora mantem estado e entram normalmente
-  atraves da State Table (Stateful Packet Inspection).
-===============================================================================
+No pfSense, a ORDEM e as ABAS das regras importam. Revise a configuração ativa antes de reconstruir o firewall; estes itens são RESULTADOS DE TESTES, não uma sequência completa pronta para importar. Não usar passes amplos 'any' que anulem os bloqueios.

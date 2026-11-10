@@ -1,81 +1,52 @@
-# Trabalho 2: Implementacao Pratica de Firewall (Projeto Celepar)
-Disciplina: Redes de Computadores - 4o Periodo  
-Instituicao: Instituto Federal do Parana (IFPR) - Campus Pinhais  
-Professor: Gabriel Vinicius Canzi Candido  
-Integrantes: Alexandre Raphael Marques de Freitas, Beatriz Regina Nahas, Mauricio Rockembach dos Santos  
+# Trabalho 2 — Implementação prática de rede e firewall (CELEPAR)
 
----
+**Instituição:** IFPR — Campus Pinhais · **Disciplina:** Projeto de Redes de Computadores  
+**Equipe:** Alexandre Raphael Marques de Freitas, Beatriz Regina Nahas e Maurício Rockembach dos Santos.
 
-## 1. Visao Geral do Projeto (v2.1)
-Este repositorio contem a implementacao pratica da infraestrutura de rede corporativa projetada para o escritorio da Celepar (docs/armf_brn_mrs.pdf).
+Este repositório reúne o projeto teórico e as evidências do **protótipo prático de quatro VMs**, implantado no VirtualBox e validado em 10/11/2026. Os resultados estão detalhados em [`docs/validacao_laboratorio_2026-11-10.md`](docs/validacao_laboratorio_2026-11-10.md).
 
-O foco central e a Seguranca Logica, Segmentacao de Redes e Firewall Stateful, integrando os servicos requeridos:
-1. Firewall Central e Roteamento Inter-VLAN (Filtragem em Camada 4 com politica de menor privilegio).
-2. Servico de DHCP (Distribuicao dinamica com pools dedicados por VLAN).
-3. Servico de DNS Interno (Resolucao autoritativa para o dominio celepar.local e recursao externa).
-4. Servidor Web e Intranet Corporativa (Portal interno com sistema de requisicao de servicos de T.I. na VLAN 20).
-5. Acesso Remoto Seguro via VPN (Tunel criptografado para colaboradores remotos e administracao externa).
+## Arquitetura real implementada
 
----
+| Segmento | Sub-rede | Gateway pfSense | Máquina / observação |
+|---|---|---|---|
+| WAN | VirtualBox NAT | `em0`, DHCP `10.0.2.15` | Acesso externo |
+| Gestão | `10.0.10.0/24` | `em1` `10.0.10.1` | Windows Host-only `10.0.10.2` |
+| Servidores | `10.0.20.0/24` | `em2` `10.0.20.1` | CELEPAR-SRV `10.0.20.5`; Nginx intranet `10.0.20.10` |
+| Estações | `10.0.30.0/24` | `em3` `10.0.30.1` | CELEPAR-ESTACAO DHCP `10.0.30.50` |
+| Visitantes | `10.0.40.0/24` | `em4` `10.0.40.1` | CELEPAR-VISITANTE DHCP `10.0.40.50` |
+| VPN | `10.0.50.0/24` | OpenVPN `10.0.50.1` | Cliente Windows `10.0.50.2` |
 
-## 2. Segmentacao de Sub-redes e Servicos
+**Atenção:** as redes de servidores, estações e visitantes foram conectadas a **interfaces físicas virtuais distintas**, cada uma em uma *Internal Network* do VirtualBox, **não** em trunk 802.1Q. A identificação "VLAN 10/20/30/40" permanece na documentação *teórica* e em alguns arquivos históricos, mas não descreve encapsulamento VLAN observado no protótipo. O projeto original para 96 estações é um dimensionamento teórico, não o número de máquinas instaladas.
 
-| Segmento | Identificacao | Sub-rede | Gateway | Servicos Ativos |
-|---|---|---|---|---|
-| VLAN 10 | Gerenciamento | 10.0.10.0/24 | 10.0.10.1 | Gerencia dos switches, APs, gateway e Servidor DNS (10.0.10.1). |
-| VLAN 20 | Servidores / Corporativo | 10.0.20.0/24 | 10.0.20.1 | Servidor de Arquivos SMB (10.0.20.5) e Servidor Web Intranet/Requisicoes (10.0.20.10). |
-| VLAN 30 | Estacoes de Trabalho | 10.0.30.0/24 | 10.0.30.1 | 96 computadores fisicos recebendo IP via DHCP (10.0.30.50-200). |
-| VLAN 40 | Wi-Fi Visitantes | 10.0.40.0/24 | 10.0.40.1 | Dispositivos moveis e BYOD recebendo IP via DHCP (10.0.40.50-200) isolados de ativos internos. |
-| VPN | Acesso Remoto Seguro | 10.0.50.0/24 | 10.0.50.1 | Tunel OpenVPN/IPsec para colaboradores e T.I. externa via WAN (UDP 1194). |
+## Serviços implantados e testados
 
----
+| Serviço | Implementação | Resultado observado |
+|---|---|---|
+| DHCP | pfSense | IP dinâmico nas VMs estação e visitante |
+| DNS | DNS Resolver do pfSense | `intranet.celepar.local` → `10.0.20.10` |
+| Firewall | pfSense | Estação: HTTP 80 e SMB 445 permitidos; SSH 22 e WebGUI 80 bloqueados. Visitante: intranet 80 e SMB 445 bloqueados |
+| Intranet | Nginx no Ubuntu Server | HTTP 200 OK em `10.0.20.10:80` |
+| Arquivos | Samba | Porta TCP 445 alcançável da estação; transferência autenticada não demonstrada nos prints |
+| NTP | Chrony ↔ pfSense | Fonte `10.0.20.1`, `Leap status: Normal` |
+| NAT e Internet | pfSense / VirtualBox | Acesso externo da VM visitante e ping externo do servidor; ainda sem captura da tradução pós-NAT |
+| Monitoramento | Zabbix Server/Agent 2 e SNMP | Três hosts com indicadores ZBX/SNMP verdes e dados recentes |
+| VPN | OpenVPN | Rota do cliente `10.0.20.0/24` via `10.0.50.1`; SSH autenticado no servidor a partir do IP `10.0.50.2` |
 
-## 3. Estrutura do Repositorio
+## Arquivos
 
-```text
-Trabalho2_Firewall_Celepar/
-|
-|-- README.md                          # Guia principal do projeto
-|-- CHANGELOG.md                       # Historico formal de versionamento (v2.0 -> v2.1)
-|-- .gitignore                         # Filtro de arquivos temporarios e logs
-|
-|-- docs/
-|   |-- armf_brn_mrs.pdf               # Relatorio teorico v2.0 de referencia
-|   |-- matriz_regras.md               # Especificacao tecnica de regras e seguranca
-|   `-- roteiro_defesa.md              # Roteiro formal para a defesa com o professor Gabriel
-|
-|-- servicos/
-|   `-- intranet/
-|       `-- index.html                 # Portal Web Intranet da Celepar com Sistema de Requisicoes
-|
-|-- configs/
-|   |-- pfsense/                       # Plano A: Implementacao com Maquinas Virtuais
-|   |   |-- guia_instalacao_vms.md     # Guia de configuracao com DNS, DHCP, Web e OpenVPN
-|   |   `-- regras_pfsense.txt         # Relacao textual de regras para a interface web
-|   `-- packet_tracer/                 # Plano B: Implementacao no Cisco Packet Tracer
-|       |-- guia_packet_tracer.md      # Montagem com Switch, Servidor Web/DNS e PCs
-|       `-- router_cisco_ios.cfg       # Script CLI completo (ROAS, ACLs, DHCP, NAT e DNS)
-|
-`-- testes/
-    |-- test_firewall.ps1              # Script de teste automatizado em PowerShell (Windows)
-    `-- test_firewall.sh               # Script de teste automatizado em Bash (Linux)
-```
+- [`docs/validacao_laboratorio_2026-11-10.md`](docs/validacao_laboratorio_2026-11-10.md) — catálogo das 19 provas, comandos, conclusões e limitações.
+- [`docs/evidencias/2026-11-10/`](docs/evidencias/2026-11-10/) — capturas de tela recebidas, com nomes normalizados.
+- [`docs/matriz_regras.md`](docs/matriz_regras.md) — matriz resumida de acesso e segurança observados.
+- [`configs/pfsense/guia_instalacao_vms.md`](configs/pfsense/guia_instalacao_vms.md) — guia da topologia e testes efetivos.
+- [`configs/pfsense/regras_pfsense.txt`](configs/pfsense/regras_pfsense.txt) — resumo de regras esperadas/observadas (não substitui export do pfSense).
+- [`testes/test_firewall.sh`](testes/test_firewall.sh) — script de verificação na estação Linux (sem alterar o firewall).
+- [`CHANGELOG.md`](CHANGELOG.md) — histórico de atualização.
 
----
+Os diretórios `configs/packet_tracer/` e `docs/prints/` já existentes permanecem como materiais históricos; não são prova da implementação em VirtualBox.
 
-## 4. Matriz de Regras de Firewall
+## Pendências para entrega
 
-1. Visitantes (VLAN 40 -> WAN): Permite apenas navegacao web e DNS (portas 80, 443 e 53).
-2. Isolamento de Visitantes (VLAN 40 -> Redes Internas): Bloqueio irrestrito. Visitantes nao acessam arquivos, Intranet nem gerencia.
-3. Estacoes para Servidores (VLAN 30 -> VLAN 20): Permite arquivos (SMB 445), impressao (IPP 631) e Intranet / Requisicoes (HTTP 80 / HTTPS 443). Demais portas fechadas.
-4. Protecao da Gerencia (VLANs 20, 30, 40 -> VLAN 10): Bloqueio irrestrito para estacoes comuns.
-5. Acesso Remoto Seguro (VPN -> VLAN 20/10): Colaboradores remotos acessam Intranet e SMB; administradores credenciados acessam VLAN 10.
-6. Borda Externa (WAN -> LAN): Bloqueio padrao de conexoes de entrada nao solicitadas (Stateful), permitindo unicamente o tunel VPN autenticado (UDP 1194).
-
----
-
-## 5. Portal Web da Intranet (Servicos de Requisicao)
-O arquivo servicos/intranet/index.html e o portal oficial simulando a intranet da Celepar hospedada no servidor 10.0.20.10:
-- Permite a colaboradores da VLAN 30 e da VPN abrirem chamados tecnicos de suporte.
-- Demonstra status em tempo real dos servicos (SMB, DNS, DHCP, VPN e Web).
-- Pode ser aberto em qualquer navegador, servidor Nginx/Apache ou importado no servico HTTP do Cisco Packet Tracer.
+- Checar o **alerta ativo** mostrado no host `CELEPAR-SRV` no Zabbix.
+- Caso exigido, capturar uma evidência de **tradução NAT** na WAN do pfSense. Ping/HTTPS externos provam conectividade, não isoladamente a tradução.
+- Validar operações de usuário final além do simples teste de portas, caso necessário: autenticação/cópia SMB, página ou fluxo de chamados.
+- Concluir `relatorio.pdf`, organizar ZIP do professor e ensaiar a defesa técnica. **Não subir credenciais, certificados privados nem backups sem sanitização.**

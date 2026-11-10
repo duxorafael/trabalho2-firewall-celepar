@@ -1,99 +1,63 @@
-# 🚀 Guia de Implementação no pfSense (Ambiente VirtualBox)
+# Guia da bancada VirtualBox realmente utilizada
 
-Este guia ensina a configurar o ambiente com **pfSense** no VirtualBox para reproduzir a arquitetura do projeto Celepar.
+## VMs e interfaces
 
----
+1. **CELEPAR-FW**: pfSense CE 2.9.0, cinco adaptadores: `em0` WAN VirtualBox NAT; `em1` Host-only 10.0.10.1; `em2` Internal Network `CELEPAR-V20` 10.0.20.1; `em3` Internal Network `CELEPAR-V30` 10.0.30.1; `em4` Internal Network `CELEPAR-V40` 10.0.40.1.
+2. **CELEPAR-SRV**: Ubuntu Server, adaptador conectado `CELEPAR-V20`; endereços 10.0.20.5/24 e 10.0.20.10/24; gateway 10.0.20.1; Nginx, Samba, Zabbix, Chrony.
+3. **CELEPAR-ESTACAO**: Ubuntu Desktop em `CELEPAR-V30`, endereço DHCP 10.0.30.50/24, gateway 10.0.30.1.
+4. **CELEPAR-VISITANTE**: Ubuntu Desktop em `CELEPAR-V40`, endereço DHCP 10.0.40.50/24, gateway 10.0.40.1.
+5. **Windows host**: 10.0.10.2 Host-only e 10.0.50.2 na VPN OpenVPN (se conectado).
 
-## 1. Topologia de Máquinas Virtuais no VirtualBox
+As redes virtuais independentes evitam uso de trunk 802.1Q no laboratório; o projeto original de VLANs 802.1Q fica como referência teórica.
 
-Para uma bancada leve e funcional, você precisa de:
-1. **VM 1: `pfsense-router`** (Gateway/Firewall)
-   - **RAM:** 1024 MB (1 GB)
-   - **CPU:** 1 vCPU
-   - **Adaptador 1:** Placa em modo **Bridge** ou **NAT** (Simula a WAN / Internet pública).
-   - **Adaptador 2:** Placa em modo **Rede Interna** (nome: `lan-celepar`).
+## Passos gerais, não roteiro de reinstalação cega
 
-2. **VM 2: `estacao-vlan30`** (Cliente simulando posto de trabalho)
-   - Pode ser Alpine Linux (128 MB RAM) ou Lubuntu/TinyCore/Windows mini.
-   - **Placa de Rede:** Rede Interna (`lan-celepar`).
+1. Criar as VMs e conferir os nomes das redes internas **exatamente iguais** nos dois lados de cada conexão.
+2. Associar as cinco interfaces do pfSense às redes corretas e configurar os gateways IPv4 `/24`.
+3. Habilitar escopos DHCP em ESTACOES e VISITANTES, sem incluir endereços fixos.
+4. Configurar DNS Resolver (Unbound) no pfSense e host override `intranet.celepar.local` → 10.0.20.10.
+5. Habilitar firewall por interface, de forma que ESTACOES acessam web e SMB, mas não SSH nem a WebGUI; VISITANTES saem para HTTPS externo, mas não acessam redes internas.
+6. Usar Automatic Outbound NAT para o tráfego de saída, com verificação posterior pelo estado/captura WAN.
+7. Configurar Chrony no servidor utilizando o pfSense `10.0.20.1` como fonte NTP.
+8. Instalar Nginx na intranet `10.0.20.10`, Samba na porta 445 do servidor `10.0.20.5`.
+9. Instalar Zabbix Server no servidor e Zabbix Agent 2 na estação, habilitando SNMP no pfSense. No agente da estação configurar `Server=10.0.20.5`, `ServerActive=10.0.20.5`, `Hostname=CELEPAR-ESTACAO`. Garantir que um único agente escute TCP 10050.
+10. Configurar OpenVPN com túnel `10.0.50.0/24` e rota à rede de servidores; conferir que o Windows não mantém uma rota Host-only concorrente para `10.0.20.0/24`.
 
-3. **VM 3: `servidor-vlan20`** (Servidor corporativo `files.local`)
-   - Alpine Linux ou Ubuntu Server bem leve.
-   - **Placa de Rede:** Rede Interna (`lan-celepar`).
+## Comandos de validação sem efeitos colaterais
 
----
+Na estação:
 
-## 2. Configuração Inicial do pfSense
+```bash
+ip -4 addr show enp0s3
+nslookup intranet.celepar.local 10.0.30.1
+curl -I http://10.0.20.10
+nc -zv -w 3 10.0.20.5 445
+nc -zv -w 3 10.0.20.5 22
+nc -zv -w 3 10.0.10.1 80
+```
 
-Após instalar a ISO do pfSense:
-1. Atribua as interfaces:
-   - `vtnet0` ou `em0` ➔ **WAN** (recebe IP do VirtualBox via DHCP).
-   - `vtnet1` ou `em1` ➔ **LAN** (Interface pai dos troncos).
-2. Acesse a interface web do pfSense a partir de um navegador em uma máquina conectada ou via porta de gerenciamento (`https://192.168.1.1` inicial).
+No visitante:
 
----
+```bash
+ip -4 addr show enp0s3
+curl -I https://example.com
+curl -I --connect-timeout 3 http://10.0.20.10
+nc -zv -w 3 10.0.20.5 445
+```
 
-## 3. Criação das VLANs no pfSense
+No servidor:
 
-No menu superior do pfSense:
-1. Acesse **Interfaces ➔ VLANs** e clique em **+ Add**:
-   - **Parent Interface:** `em1` (ou a interface interna)
-   - **VLAN Tag:** `10` | **Description:** `VLAN_GERENCIA`
-   - Salvar.
-2. Repita o processo para as demais VLANs:
-   - Tag `20` ➔ `VLAN_SERVIDORES`
-   - Tag `30` ➔ `VLAN_ESTACOES`
-   - Tag `40` ➔ `VLAN_VISITANTES`
-3. Vá em **Interfaces ➔ Assignments**:
-   - Associe cada VLAN criada a uma nova interface (ex: `OPT1` ➔ `VLAN 10`, `OPT2` ➔ `VLAN 20`, etc.).
-   - Clique em cada interface criada, marque **Enable Interface** e defina o IPv4 estático:
-     - `VLAN10`: `10.0.10.1` (Máscara `/24`)
-     - `VLAN20`: `10.0.20.1` (Máscara `/24`)
-     - `VLAN30`: `10.0.30.1` (Máscara `/24`)
-     - `VLAN40`: `10.0.40.1` (Máscara `/24`)
+```bash
+chronyc tracking
+ping -c 3 8.8.8.8
+```
 
----
+No PowerShell do Windows com OpenVPN conectado:
 
-## 4. Habilitar Servidor DHCP
+```powershell
+Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '10.0.20.0/24' | Select-Object DestinationPrefix,NextHop,InterfaceAlias,RouteMetric
+tracert -d 10.0.20.5
+ssh wauriciors@10.0.20.5
+```
 
-Acesse **Services ➔ DHCP Server**:
-1. Na aba **VLAN30 (Estações)**:
-   - Marque **Enable DHCP server on VLAN30 interface**.
-   - Faixa de endereços: `10.0.30.50` até `10.0.30.200`.
-   - Gateway: `10.0.30.1`.
-   - DNS: `10.0.10.1` (ou `1.1.1.1`, `8.8.8.8`).
-2. Na aba **VLAN40 (Visitantes)**:
-   - Marque **Enable DHCP server on VLAN40 interface**.
-   - Faixa: `10.0.40.50` até `10.0.40.200`.
-   - Gateway: `10.0.40.1`.
-
----
-
-## 5. Criação de Aliases (Facilita as regras)
-
-Vá em **Firewall ➔ Aliases ➔ IP**:
-- Clique em **+ Add**:
-  - **Name:** `REDES_INTERNAS`
-  - **Type:** Network(s)
-  - **Networks:** `10.0.0.0 / 8`
-  - **Description:** Todas as sub-redes internas da Celepar.
-
-Vá em **Firewall ➔ Aliases ➔ Ports**:
-- Clique em **+ Add**:
-  - **Name:** `PORTAS_SERVICOS_CORP`
-  - **Type:** Port(s)
-  - **Ports:** `445` (SMB) e `631` (IPP)
-  - **Description:** Portas permitidas para o servidor de arquivos e impressoras.
-
-- Clique em **+ Add**:
-  - **Name:** `PORTAS_WEB_VISITANTE`
-  - **Type:** Port(s)
-  - **Ports:** `80`, `443`, `53`
-  - **Description:** Navegação e resolução DNS para visitantes.
-
----
-
-## 6. Configuração das Regras em *Firewall ➔ Rules*
-
-Veja os detalhes textuais de cada tela no arquivo [`regras_pfsense.txt`](regras_pfsense.txt).
-Lembre-se sempre de clicar em **Apply Changes** no topo da página após salvar cada regra.
+**Não subir credenciais ou arquivos `.ovpn` com chaves.** Consulte o catálogo de prints em `docs/validacao_laboratorio_2026-11-10.md`.
